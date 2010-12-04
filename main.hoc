@@ -1,0 +1,304 @@
+/* Execute this file to run the program. The program implements the model described in Steephen & Manchanda, 2009.
+ * 
+ * Steephen, J. E., & Manchanda, R. (2009). Differences in biophysical properties of nucleus accumbens medium spiny neurons emerging from inactivation of inward rectifying potassium currents. J Comput Neurosci, 
+ * doi:10.1007/s10827-009-0161-7
+ *
+ * For questions and queries, send e-mail to johneric@iitb.ac.in
+ */
+
+load_file("nrngui.hoc")	
+load_file("MSPcell.hoc")
+load_file("grapher.hoc")
+
+bVClamp = 0
+bTuned=1
+bSynput = 0
+bSynSD = 0
+bBeep = 0
+eKir = 0
+eAct = 0
+celsius = 35
+Dnf = 3.00000000001 // Due to implementation limitation, Also Dnf and Upf should differ at least by 0.00000000001.
+Upf = 7.5
+SI = 284 //Switching Interval
+StateNo = 7
+SpikeNo = 1
+min = 0.2
+max = 0.29
+iterations = 1
+TSO = 1050 //Tstop for Synaptic input for runs Other than the simple run
+IID = 900 //Inter-instance distance
+total_time = 0
+RunNo = 0
+seed = 0
+
+objectvar stim, nc, ns, vgraph, fih, NormRand, UniformRand, apc,  gFV, null, box, fInstChk, igraph
+strdef label
+
+proc CtrlPanel() {local idx
+	printf("Creating Control Panel...\n")
+	box = new HBox()
+	box.intercept(1)
+	
+	xpanel("Control Panel")
+	xlabel("ABOUT")
+	xlabel("This application implements the model" )
+	xlabel ("described in Steephen & Manchanda, 2009.")
+	xlabel ("Click the Help button for instructions on")
+	xlabel ("how to replicate the results in the paper.")
+	xlabel ("Application developed at: IIT Bombay")
+	xbutton("Help", "Help()")
+	xlabel(" ")
+	xlabel("CELL VARIANT")
+	xradiobutton("Non-inKIR", "eKir=0 InsertKIR(eKir)", 1)
+	xradiobutton("inKIR", "eKir=1 InsertKIR(eKir) a_inKIR=0.47") 
+	xradiobutton("pinKIR", "eKir=1 InsertKIR(eKir) a_inKIR=0.27") 
+	xlabel("")
+	xlabel("INPUT")
+	xpvalue("amp", &stim.amp, 1)
+	xpvalue("dur", &stim.dur, 1)
+	xstatebutton("Synaptic input", &bSynput)
+	xpvalue("f(Hz)", &Upf, 1)
+	xstatebutton("Voltage Clamp", &bVClamp, "SwitchClamp()")
+	xpanel(0)
+	
+	xpanel("Control Panel")
+	xlabel ("CELL PROPERTIES")
+	xbutton("KIR tau_m...", "tau_mPanel()")
+	xpvalue("inKIR gmax", &gmax_inKIR, 1)
+	xpvalue("Inactivation level (0-1)", &a_inKIR, 1)
+	xlabel("")
+	xlabel("ACTION")
+	xradiobutton("Simple Run", "eAct=0", !eAct)
+	xradiobutton("Advanced Run", "eAct=6 bSynput=1 stim.dur=100 tstop=1500 Upf=7.8")
+	xradiobutton("Earliest Spike Onset", "eAct=1 min=0.2 max=0.29")
+	xradiobutton("Strength-Duration", "eAct = 4 min=0.24 max =0.3 iterations=10")
+	xradiobutton("Frequency Vs Voltage", "eAct = 5 bSynput=1 min=2 max=5 tstop=TSO iterations=20")
+	xradiobutton("Min KIR gmax for specified Spike no.", "eAct = 7 min=0.0001 max=0.0002 stim.amp=0.26")
+	xlabel("")
+	xlabel("RUN CONTROL ")
+	xpvalue("min", &min, 1)
+	xpvalue("max", &max, 1)
+	xpvalue("iterations", &iterations, 1)
+	xpvalue("No. of spikes", &SpikeNo, 1)
+	xpvalue("Seed", &seed, 1)
+	xpvalue("Tstop", &tstop,1)
+	xstatebutton("Beep", &bBeep)
+	xpanel(0)
+	
+	xpanel("Control Panel")
+	xlabel("GRAPHS")
+	xbutton("Currents", "AllCurrents()")
+	xlabel("")
+	xlabel("RUN INFO")
+	xpvalue("t", &t)
+	xpvalue("Real Time", &realtime)
+	xpvalue("Run No", &RunNo)
+	xpvalue("Total Time (m)", &total_time)
+	xlabel("")
+	xlabel("RUN")
+	xbutton("Execute", "Exec()")
+	xbutton("Stop", "stoprun=1")
+	xbutton("MSP Grapher", "MSPGrapher()")
+	xbutton("Quit", "MyQuit()")
+	xpanel(0)
+	
+	box.intercept(0)
+	printf("Control Panel created.\n")
+	box.map("Control Panel",IID*bInstChk, 0, -1, -1)
+}
+
+proc tau_mPanel() {
+	xpanel("KIR tau_m")
+	xstatebutton("Tuned Model", &bTuned, "SetKIRmtau()")
+	
+	for idx = 0, 12 {
+		sprint(label, "%d", (idx-12)*10)
+		xpvalue(label, &vecmtau_KIR.x[idx], 1)
+	}
+	
+	xpanel(0)
+}
+
+proc MyQuit() {
+	if(bInstChk) {fInstChk.wopen()}else {fInstChk.unlink()}
+	quit()
+}
+
+objref msp_grapher
+proc MSPGrapher() {
+	msp_grapher=new Grapher(1)
+	msp_grapher.info("v","v", "finitialize(v)", -120, 20, 0, 15, 1000, -120, 20)
+	msp_grapher.vbox.intercept(1)
+	xpanel("Parameter", 1)
+	xbutton("KIR tau_m", "msp_grapher.g.addexpr(\"mtau_KIR\", 1, 1, 0.8, 0.9, 2)")
+	xbutton("gKIR", "msp_grapher.g.addexpr(\"cell_soma.g_KIR\", 3, 1, 0.8, 0.9, 2) msp_grapher.g.addexpr(\"cell_soma.g_inKIR\", 2, 1, 0.8, 0.9, 2)")
+	xbutton("gK", "AddgK()")
+	xbutton("v", "msp_grapher.g.addexpr(\"cell_soma.v(0.5)\", 4, 1, 0.8, 0.9, 2)")
+	xpanel(0)
+	msp_grapher.vbox.intercept(0)
+	msp_grapher.vbox.map("Grapher", 100+bInstChk*IID, 400, 315, 441)
+}
+proc AddgK() {
+	msp_grapher.g.addexpr("cell_soma.g_KIR+cell_soma.g_KAf+cell_soma.g_KAs+cell_soma.g_KRP+cell_soma.g_BKKCa+cell_soma.g_SKKCa", 3, 1, 0.8, 0.9, 2)
+	msp_grapher.g.addexpr("cell_soma.g_inKIR+cell_soma.g_KAf+cell_soma.g_KAs+cell_soma.g_KRP+cell_soma.g_BKKCa+cell_soma.g_SKKCa", 2, 1, 0.8, 0.9, 2)
+}
+
+objref vecAPC
+proc ProgInit() {
+	printf("Setting up input providers...\n")
+	ns = new List()
+	stim = new IClamp(0.5)
+	apc = new APCount(0.5)
+	vecAPC = new Vector()
+	apc.record(vecAPC)
+	stim.del =300
+	stim.dur = 500
+	stim.amp = 0.248
+	fInstChk = new File("support_files/Instchk.dat")
+	if(!bInstChk = fInstChk.ropen()) fInstChk.wopen()
+	fInstChk.close()
+	if(bInstChk)fInstChk.unlink()
+	printf("Program Instance %d\n", bInstChk+1)
+	vgraph = new Graph(0)
+	vgraph.view(0,0,0,0,IID*bInstChk,670,500, 230)
+	graphList[0].append(vgraph)
+	vgraph.addexpr("v", "!eKir *cell_soma.v(0.5)", 3, 3, 0.7, 0.9, 2)
+	vgraph.addexpr("v", "eKir*cell_soma.v(0.5)", 2, 3, 0.7, 0.9, 2)
+	fih = new FInitializeHandler("loadqueue()")
+	cvode.active(1)	
+}
+	
+proc ActivateInput() {
+	if(!bSynput) {
+		printf("Activating current injection input...\n")
+		ns.remove_all()	
+		tstop = stim.del+stim.dur+200
+		if(bVClamp) tstop = 250
+	}else {
+		printf("Activating synaptic input...\n")
+				
+		for i = 0, 83 {
+			ns.append(new NetCon(null, ncl_GABA.o[i], 10, 1, 1))
+		}
+
+		for i = 84, 167 { 
+			ns.append(new NetCon(null, ncl_AMPA.o[i-84], 10, 1, 1))
+			ns.append(new NetCon(null, ncl_NMDA.o[i-84], 10, 1, 1))
+		}
+		
+		stim.amp = 0
+		 if(eAct!=5 && eAct!=6) {tstop = StateNo * SI}
+	}
+	
+	printf("Input activated...\n")
+}
+
+proc Exec(){
+	RunNo = 0
+	total_time = 0
+	ActivateInput()
+	if(!eAct) {Batch_Run()
+	} else if((eAct ==1) || (eAct == 2)){MaxCurVsFreq(eAct)
+	} else if(eAct==4){StrengthDur()
+	} else if(eAct==5){FreqVsV()
+	} else if(eAct==6){Ramp()
+	} else if((eAct==7)||(eAct==8)) {MingmaxVsFreq(eAct)
+	}
+	if(bBeep) WinExec("support_files\\beep.bat")
+}
+
+func Rnd() {local n
+	n=10^$3
+	return int(n*$1+0.99999*$2)/n	
+}
+
+func Run(){local idx
+	RunNo+=1
+	run()
+	total_time+=realtime/60
+	if(!bSynput)vecAPC.sub(stim.del)
+	return !stoprun
+}
+
+proc SwitchClamp() {
+	Biophysics()
+	cvode.active(!bVClamp)
+	stim.amp = 0
+	
+	if(bVClamp) {
+		igraph = new Graph()
+		graphList[0].append(igraph)
+		igraph.addexpr("cell_soma.ik_KIR(0.5)", 3, 1, 0.7, 0.9, 2)
+		igraph.addexpr("cell_soma.ik_inKIR(0.5)", 2, 1, 0.7, 0.9, 2)
+		igraph.size(0, 230, -.01, 0)
+		v_init=-50
+		celsius = 25
+		load_file("electrod.hoc") makeelectrode()
+		//~ tstop = 250
+	} else {
+		igraph.unmap()
+		InsertKIR(eKir)
+		celsius = 35
+	}
+}
+
+objref IBox
+proc AllCurrents() {local i, idx localobj lstAllIgraph, strfun
+	strdef szI, szExpr, szLabel
+	lstAllIgraph = new List()
+	strfun = new StringFunctions()
+	szI= "ina_NaF,ina_NaP,i_KAf,ik_KAs,ik_KRP,ik_BKKCa,ik_SKKCa,iCa_CaL12,iCa_CaL13,iCa_CaT,ica_CaN,ica_CaR,ica_CaQ,ina,ik,ica,iCa,cai,Cai,"
+	IBox = new VBox(3,1)
+	IBox.intercept(1)
+		
+	for i=0, 21 {
+		lstAllIgraph.append(new Graph())
+		graphList[0].append(lstAllIgraph.o[i])
+		lstAllIgraph.o[i].exec_menu("Keep Lines")
+		lstAllIgraph.o[i].size(0, tstop, -1.5, 0.5)
+				
+		if(strcmp(szI,"")) {
+			strfun.right(szI,strfun.head(szI, ",", szLabel)+1)
+			sprint(szExpr, "cell_soma.%s(0.5)*!eKir", szLabel)
+			lstAllIgraph.o[i].addexpr(szLabel, szExpr, 3, 1, 0.8, 0.9, 2)
+			sprint(szExpr, "cell_soma.%s(0.5)*eKir", szLabel)
+			lstAllIgraph.o[i].addexpr(szLabel, szExpr, 2, 1, 0.8, 0.9, 2)			
+		}
+	}
+	
+	lstAllIgraph.o[19].addexpr("noninKIR", "cell_soma.ik_KIR(0.5)", 3, 1, 0.8, 0.9, 2)
+	lstAllIgraph.o[19].addexpr("inKIR", "cell_soma.ik_inKIR(0.5)", 2, 1, 0.8, 0.9, 2)
+	lstAllIgraph.o[20].addexpr("iCa+ica", "(cell_soma.iCa(0.5)+cell_soma.ica(0.5))*!eKir", 3, 1, 0.8, 0.9, 2)
+	lstAllIgraph.o[20].addexpr("iCa+ica", "(cell_soma.iCa(0.5)+cell_soma.ica(0.5))*eKir", 2, 1, 0.8, 0.9, 2)
+	lstAllIgraph.o[21].addexpr("i", "(cell_soma.iCa(0.5)+cell_soma.ica(0.5)+cell_soma.ina(0.5)+cell_soma.ik(0.5))*!eKir", 3, 1, 0.8, 0.9, 2)
+	lstAllIgraph.o[21].addexpr("i", "(cell_soma.iCa(0.5)+cell_soma.ica(0.5)+cell_soma.ina(0.5)+cell_soma.ik(0.5))*eKir", 2, 1, 0.8, 0.9, 2)
+	IBox.intercept(0)
+	IBox.map("Currents",10, 10, 395, 205)	
+}
+
+objref outerbox, strfnc
+strfnc = new StringFunctions()
+proc Help() {localobj fHlp
+	strdef szHlp, tmpstr
+	fHlp = new File("support_files/Help.txt")
+	fHlp.ropen()
+        outerbox=new VBox()
+	outerbox.intercept(1)
+  	  xpanel("Help")
+	  while(fHlp.gets(szHlp)!=-1) {
+	    strfnc.head(szHlp, "\n", tmpstr)
+            xlabel(tmpstr)
+          }
+	  xpanel(1)
+	outerbox.intercept(0)
+	outerbox.map("Help",100,50,500,600)
+}
+
+CreateCell()
+access cell_soma
+ProgInit()
+ActivateInput()
+CtrlPanel()
+load_file("stim.hoc")
+load_file("Actions.hoc")

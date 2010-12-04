@@ -1,0 +1,181 @@
+/* Execute main.hoc to run the program. The program implements the model described in Steephen & Manchanda, 2009.
+ * 
+ * Steephen, J. E., & Manchanda, R. (2009). Differences in biophysical properties of nucleus accumbens medium spiny neurons emerging from inactivation of inward rectifying potassium currents. J Comput Neurosci, 
+ * doi:10.1007/s10827-009-0161-7
+ */
+ 
+strdef szTxt 
+proc Batch_Run() {local idx, n localobj mSpkTmng
+	printf ("\nRUN\n")
+	mSpkTmng = new Matrix(iterations, StateNo*3)
+	vgraph.size(0, tstop, -80, 40)
+	szTxt = "Spike Timings\n"
+
+	for idx = 1, iterations {
+		 if(bSynput && idx>1) seed+=1
+		if(!Run()) break
+		printf("\nDur = %d, Spike timings: ", stim.dur)
+		vecAPC.printf("%.0f")
+		for n = 0, vecAPC.size()-1 {sprint(szTxt, "%s%.0f ms\n", szTxt, vecAPC.x[n])}		
+		mSpkTmng.setrow(idx-1, vecAPC)		
+	}
+}
+
+objref gStimAmp
+proc Ramp(){local Dt, RampSteps, ExtraDur, idx localobj vecTime, mRamp, vecRamp, vecRev
+	vecRamp = new Vector()
+	szTxt = "Spike Timings\n"
+	if(bSynput) {
+		Dt = 10
+		mRamp = new Matrix(iterations, tstop/Dt)	
+		for idx = 1, iterations {
+			vecRamp.record(&v(0.5), Dt)
+			vgraph.size(0, tstop, -80, 40)
+			if(idx>1) seed+=1
+			if(!Run()) break
+			for n = 0, vecAPC.size()-1 {sprint(szTxt, "%s%.0f ms\n", szTxt, vecAPC.x[n])}		
+			mRamp.setrow(idx-1, vecRamp)			
+		}	
+		return
+	}
+		
+	vecTime = new Vector()
+	vecRev = new Vector()
+
+	RampSteps = 100
+	printf("\nstim.amp=%f",stim.amp)
+	vecRamp.indgen(0, stim.amp, stim.amp/RampSteps)
+	vecRev.copy(vecRamp)
+	vecRev.reverse()
+	vecRamp.append(vecRev)
+	vecTime.indgen(stim.del, stim.del+50, 50/RampSteps)
+	vecRev.indgen(stim.del+stim.dur-50, stim.del+stim.dur, 50/RampSteps)
+	vecTime.append(vecRev)
+	stim.amp = 0
+	vecRamp.play(&stim.amp, vecTime)
+	
+	if(gStimAmp == null) {
+		gStimAmp = new Graph()
+		graphList[0].append(gStimAmp)
+		gStimAmp.addexpr("stim.amp", 3, 1, 0.7, 0.9, 2)
+		gStimAmp.size(0, tstop, 0, 0.3)
+	}
+	
+	vgraph.size(0, tstop, -80, 40)
+	Run()
+}
+
+proc MaxCurVsFreq() {local i, dcmlpts, newmax localobj freqvec
+	vgraph.size(0, tstop, -80, 40)
+	for i=1,2 vgraph.exec_menu("Keep Lines")
+	newmax = max
+	dcmlpts = 3
+	freqvec = new Vector(SpikeNo+1, min)
+	
+	while (SpikeNo>-1){
+		while ((newmax-freqvec.x[SpikeNo])>(10^(-dcmlpts))){
+			stim.amp = Rnd((freqvec.x[SpikeNo]+newmax)/2, 1, dcmlpts)
+			if(!Run()) break
+			if(apc.n>SpikeNo) {newmax = stim.amp}else {freqvec.fill(stim.amp, apc.n, SpikeNo)}
+		}
+		
+		if(stoprun) break
+		printf("\nEarliest Spike Onset occurs when current is %.3f nA\n", freqvec.x[SpikeNo])
+		if($1==1) {if(stim.amp!=stim.amp=freqvec.x[SpikeNo]) Run() break}
+		SpikeNo-=1
+	}	
+
+	if($1==2)freqvec.printf()
+}
+
+proc MingmaxVsFreq() {local dcmlpts, newmin localobj freqvec, pgmax
+	vgraph.size(0, tstop, -80, 40)
+	newmin = min
+	dcmlpts = 6
+	freqvec = new Vector(SpikeNo+1, max)
+	if(!eKir) {pgmax = new Pointer("gmax_KIR")}else{pgmax = new Pointer("gmax_inKIR")}
+		
+	while (SpikeNo>-1){
+		while ((freqvec.x[SpikeNo]-newmin)>(10^(-dcmlpts))){
+			pgmax.val = Rnd((freqvec.x[SpikeNo]+newmin)/2, 1, dcmlpts)
+			if(!Run()) break
+			if(apc.n>SpikeNo) {newmin = pgmax.val}else {freqvec.fill(pgmax.val, apc.n, SpikeNo)}
+			printf("\ngmax_KIR=%g, Spike No = %d, max =%g, min = %g\n", pgmax.val, apc.n, freqvec.x[SpikeNo], newmin)	
+			freqvec.printf()
+		}
+		
+		if(stoprun) break
+		printf("\nMinimum KIR gmax required for generating %d spike(s) is %.6f uS\n", SpikeNo, freqvec.x[SpikeNo])
+		if($1==7) break
+		SpikeNo-=1
+	}	
+
+	if($1==8) freqvec.printf()
+}
+
+proc StrengthDur() {local input, interval
+	strdef szStrength
+	szStrength = "Hz"
+	if(iterations<1) return
+	if(iterations==1) {interval = max-min+1
+	}else {interval = (max-min)/(iterations-1)}
+	tstop = 0
+	if(!bSynput) {stim.dur = 2000-stim.del szStrength="nA"}
+	//~ interval = (max-min)/iterations
+	vgraph.size(0, 2000, -80, 40)
+	
+	for (input=min; input<=max; input+=interval){
+		if(bSynput){Upf = input}else {stim.amp = input}
+		if(!Run()) break
+	
+		 for i = 1, 2000/100 {			
+			continuerun(t + 100)
+			total_time+=realtime/60
+			if(stoprun) break
+				
+			if(apc.n>0){
+				printf("Strength=%g %s, Duration=%.0f ms\n", input, szStrength, vecAPC.x[0]-stim.del)
+				break
+			}
+		}
+		if(stoprun) break
+	 }
+	
+	if(bSynput) {Upf = 7.5}
+}
+
+proc FreqVsV() {local interval, i localobj vTime, vRec, mValues
+	if(iterations<1) return
+	if(iterations==1) {interval = max-min+1
+	}else {interval = (max-min)/(iterations-1)}
+	vRec = new Vector()
+	vTime =new Vector()
+	mValues = new Matrix (iterations, 2)
+	vTime.indgen(TSO-450, TSO, 1)
+	vRec.record(&v(0.5), vTime)
+	vgraph.size(0, TSO, -90, -50)
+	vgraph.exec_menu("Erase")
+	vgraph.exec_menu("Keep Lines")
+	Upf = min
+
+	for i=0, iterations-1 {
+		if (i>0) seed+=1
+		if(!Run()) break
+		if(apc.n>0) break
+		total_time+=realtime/60
+		mValues.x[i][0] = Upf
+		mValues.x[i][1] = vRec.mean()
+		Upf+=interval		
+		vRec.printf()		
+	}
+	mValues.resize(i,2)
+	mValues.printf()
+	Upf = 7.5
+	vgraph.exec_menu("Keep Lines")
+	
+	if(gFV==null) {gFV = new Graph()}
+	mValues.getcol(1).line(gFV, mValues.getcol(0), 3*!eKir+2*eKir, 1)
+	mValues.getcol(1).line(gFV, mValues.getcol(0), 3, 1)
+	gFV.exec_menu("View = plot")
+	gFV.exec_menu("Keep Lines")
+}

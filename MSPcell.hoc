@@ -1,0 +1,220 @@
+/* Execute main.hoc to run the program. The program implements the model described in Steephen & Manchanda, 2009.
+ * 
+ * Steephen, J. E., & Manchanda, R. (2009). Differences in biophysical properties of nucleus accumbens medium spiny neurons emerging from inactivation of inward rectifying potassium currents. J Comput Neurosci, 
+ * doi:10.1007/s10827-009-0161-7
+ */
+ 
+xopen("chan_KAf.ses")
+xopen("tautables.hoc")
+
+npdend = 4
+nmdend = 8
+nddend = 16
+Cao0_Ca_ion =cao0_ca_ion = 5
+
+objref ncl_AMPA, ncl_NMDA, ncl_GABA
+
+create cell_soma, pdend[npdend], mdend[nmdend], ddend[nddend]
+
+proc Topology() {
+
+	printf("Building topology...\n")
+
+	for i = 0, (npdend/2)-1{
+		connect pdend[i](0), cell_soma(0)
+
+		for m = 2*i, 2*i +1{
+			connect mdend[m](0), pdend[i](1)
+			for n = 2*m, 2*m+1{connect ddend[n](0), mdend[m](1)}
+		}
+	}
+
+	for i = npdend/2, npdend-1{
+		connect pdend[i](0), cell_soma(1)
+		
+		for m = 2*i, 2*i +1{
+			connect mdend[m](0), pdend[i](1)
+			for n = 2*m, 2*m+1{ connect ddend[n](0), mdend[m](1)}
+		}
+	}
+	printf("Topology built.\n")
+}
+
+proc Geometry() {
+
+	printf("Building geometry...\n")
+	cell_soma diam = 16
+	cell_soma L = 16
+	
+	for i = 0,npdend-1{
+		pdend[i] diam = 2.25
+		pdend[i] L = 20
+		pdend[i] nseg = 1
+	}
+			
+	for i = 0,nmdend-1{
+		mdend[i] diam = 1.1
+		mdend[i] L = 24.23
+		mdend[i] nseg = 1
+	}
+	
+	for i = 0,nddend-1{
+		ddend[i] diam = 0.72
+		ddend[i] L = 395.2
+		ddend[i] nseg = 11
+	}
+	
+	printf("Geometry built.\n")
+}
+
+proc Biophysics () {
+	printf("Incorporating biophysics...\n")
+	
+	forall {
+		insert pas
+		insert NaF
+		insert NaP
+		insert KAf
+		insert KAs
+		insert CaQ 
+		insert CaN 
+		insert CaKdyn 
+		insert CaT 
+		insert CaL13 
+		insert Cadyn 
+		insert CaL12 
+		insert CaR 
+		insert BKKCa
+		insert SKKCa
+		g_pas = 11.5e-6
+		Ra = 100				
+		ek = -90		
+	}
+	
+	cell_soma {
+		insert KRP
+		gmax_NaF = 1.5
+		gmax_NaP = 4e-5
+		gmax_KAf = 0.225
+		gmax_KAs = 0.0104
+	}
+	
+	for i = 0,npdend-1{
+		pdend[i] insert KRP
+		pdend[i] gmax_KRP = 0				
+		pdend[i] gmax_KAf = 0.225
+		pdend[i] gmax_KAs = 0.0104				
+	}
+	
+	InsertKIR(eKir)
+	SetKIRmtau()
+	
+	if(bVClamp) {
+		forall {
+			uninsert pas
+			uninsert NaF
+			uninsert NaP
+			uninsert KAf
+			uninsert KAs
+			uninsert CaQ
+			uninsert CaT
+			uninsert CaR
+			uninsert CaN
+			uninsert CaL12
+			uninsert CaL13
+			uninsert CaKdyn
+			uninsert Cadyn
+			uninsert BKKCa
+			uninsert SKKCa
+			uninsert KRP
+		}
+		ek = -50
+	}
+		
+	printf("Biophysics incorporated.\n")
+}
+
+proc Synapses() {
+	printf("Adding synapses...\n")
+	
+	ncl_AMPA = new List()
+	ncl_NMDA = new List()
+	ncl_GABA = new List()
+	
+	cell_soma {
+		for j = 0, 15 { ncl_GABA.append (new GABA (0.5))}
+	}
+
+	for i = 0,npdend-1{
+		pdend[i] {
+			ncl_AMPA.append (new AMPA(0.5))
+			ncl_NMDA.append (new NMDA(0.5))
+			for j = 0, 2 {ncl_GABA.append (new GABA (0.5)) }
+		}
+	}
+	
+	for i = 0,nmdend-1{
+		mdend[i] {
+			for j = 0, 2 {ncl_GABA.append (new GABA (0.5))}
+			
+			for j = 0, 1 {
+				ncl_AMPA.append (new AMPA(0.5))
+				ncl_NMDA.append (new NMDA(0.5))
+			}
+		}
+	}
+
+	for i = 0,nddend-1{
+		ddend[i] {
+			ncl_GABA.append (new GABA(0.33))
+			ncl_GABA.append (new GABA(0.66))
+		
+			for(j = 0.2; j <= 0.8; j = j + 0.2) {
+				ncl_NMDA.append (new NMDA(j))
+				ncl_AMPA.append (new AMPA(j))
+			}
+		}
+	}
+	
+	printf("Synapses added.\n")
+}
+
+proc InsertKIR() {
+	
+	if($1){
+		forall{
+			uninsert KIR
+			insert inKIR
+			}
+		printf("KIR inactivation enabled\n")
+		if(!bVClamp) {v_init = -86.66}
+		} else {
+		forall{
+			uninsert inKIR
+			insert KIR
+			}
+		if(!bVClamp) {v_init = -87.746}
+		printf("KIR inactivation disabled\n")
+	}
+}
+
+proc SetKIRmtau() {
+	if(!bTuned){
+		vecmtau_KIR.resize(0)
+		vecmtau_KIR.append(7.465, 7.465, 7.465, 8, 9.435, 10.755, 12.12, 13.795, 15.385, 14.285, 11.765, 8.89, 8) //35 deg C
+		printf("KIR mtau set to Wolf's values.\n")
+	} else {
+		vecmtau_KIR.resize(0)
+		vecmtau_KIR.append(0.09,0.26,0.633,1.947,3.12,10.755, 12.12, 13.795, 15.385, 14.285, 11.765, 8.89, 8) //35 deg C
+		printf("KIR mtau set to adjusted values.\n")
+	}
+}
+
+proc CreateCell() {
+	printf("Beginning cell creation....\n\n")
+	Topology()
+	Geometry()
+	Biophysics()
+	Synapses()
+	printf("\nCell creation complete.\n")
+}
