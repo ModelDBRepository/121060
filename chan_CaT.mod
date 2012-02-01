@@ -42,9 +42,7 @@ ASSIGNED {
 }
 
 BREAKPOINT { 
-	: SOLVE state :METHOD euler
-	SOLVE state METHOD euler
-:	SOLVE state METHOD cnexp
+	SOLVE state METHOD cnexp
 	iCa = pmax * m*m*m*h*ghk(v,Cai,Cao,2)	
 	: iCa = pmax * m*m*m*h*ghk(v,0.001,Cao,2)	
 }
