@@ -29,13 +29,13 @@ instructions in the "Help" panel to recreate figure 1B from the paper:
 
 ![Figure 1B](./fig1b.jpg)
 
+---
 20111102 Files chan_Cadyn.mod chan_CaN.mod updated to use
 derivimplicit. See
 [http://www.neuron.yale.edu/phpBB/viewtopic.php?f=28&t=592](http://www.neuron.yale.edu/phpBB/viewtopic.php?f=28&t=592) for more.
+
 20120201 chan_CaKdyn.mod chan_CaL12.mod chan_CaL13.mod chan_CaQ.mod
 chan_CaR.mod chan_CaT.mod also updated to not use euler (see above
 link to neuron forum).
 
----
-
-2025-06-02: Converted README to Markdown.
+20250602: Converted README to Markdown.
